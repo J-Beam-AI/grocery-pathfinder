@@ -17,7 +17,6 @@ export function useShoppingList() {
 
   const parseList = useCallback((rawText: string, catalog: CatalogItem[], prevItems: ShoppingListItem[] = []) => {
     const lines = rawText.split(/[\n,]+/).map(l => l.trim()).filter(Boolean)
-    // Carry over checked state for items that appear in the updated list
     const prevChecked = new Set(
       prevItems.filter(i => i.checked).map(i => i.raw.trim().toLowerCase())
     )

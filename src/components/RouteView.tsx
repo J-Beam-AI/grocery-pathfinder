@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { ShoppingListItem, StoreLayout, StoreZone } from '../types'
+
 import { ZoneGroup } from './ZoneGroup'
 import { UnknownItemResolver } from './UnknownItemResolver'
 
@@ -28,24 +29,39 @@ function buildIndexedSegments(items: ShoppingListItem[], layout: StoreLayout): I
 
 interface RouteViewProps {
   items: ShoppingListItem[]
+  otherNames: string[]
   store: StoreLayout
   onToggle: (index: number) => void
   onAssignZone: (index: number, zoneId: string) => void
-  onEditList: () => void   // go back to edit — preserves the list
-  onNewList: () => void    // start fresh — clears the list
-  onAddToCatalog: (raw: string, zoneId: string) => void
+  onReassign: (index: number, zoneId: string) => void
+  onSkipToOther: (index: number) => void
+  onEditList: () => void
+  onNewList: () => void
+  onSaveToCatalog: (name: string, zoneId: string) => void
 }
 
-export function RouteView({ items, store, onToggle, onAssignZone, onEditList, onNewList, onAddToCatalog }: RouteViewProps) {
-  // Track items the user chose to skip (kept local — session UI state only)
-  const [skippedIndices, setSkippedIndices] = useState<Set<number>>(new Set())
+export function RouteView({
+  items,
+  otherNames,
+  store,
+  onToggle,
+  onAssignZone,
+  onReassign,
+  onSkipToOther,
+  onEditList,
+  onNewList,
+  onSaveToCatalog,
+}: RouteViewProps) {
+  const [showReview, setShowReview] = useState(false)
+
+  const otherSet = new Set(otherNames)
 
   const segments = buildIndexedSegments(items, store)
 
   const unknowns = items
     .map((item, originalIndex) => ({ item, originalIndex }))
-    .filter(({ item, originalIndex }) =>
-      !skippedIndices.has(originalIndex) &&
+    .filter(({ item }) =>
+      !otherSet.has(item.raw.trim().toLowerCase()) &&
       !item.zoneId &&
       !item.matched?.zoneId
     )
@@ -55,17 +71,18 @@ export function RouteView({ items, store, onToggle, onAssignZone, onEditList, on
   const totalCount = routeItems.length
   const allDone = totalCount > 0 && checkedCount === totalCount
 
+  // Reset showReview whenever items become not-all-done (e.g. user unchecks something)
+  useEffect(() => {
+    if (!allDone) setShowReview(false)
+  }, [allDone])
+
   function handleAssign(originalIndex: number, zoneId: string) {
     onAssignZone(originalIndex, zoneId)
-    onAddToCatalog(items[originalIndex].raw, zoneId)
-  }
-
-  function handleSkip(originalIndex: number) {
-    setSkippedIndices(prev => new Set([...prev, originalIndex]))
+    onSaveToCatalog(items[originalIndex].raw.trim().toLowerCase(), zoneId)
   }
 
   // All-done celebration
-  if (allDone) {
+  if (allDone && !showReview) {
     return (
       <div className="max-w-lg mx-auto px-4 flex flex-col items-center justify-center min-h-[60vh] text-center gap-4">
         <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
@@ -75,12 +92,20 @@ export function RouteView({ items, store, onToggle, onAssignZone, onEditList, on
         </div>
         <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">All done!</h2>
         <p className="text-gray-500 dark:text-gray-400">You&rsquo;re all set to checkout.</p>
-        <button
-          onClick={onNewList}
-          className="mt-2 px-6 py-3 bg-blue-500 text-white rounded-xl font-medium text-sm"
-        >
-          New List
-        </button>
+        <div className="flex gap-3 mt-2">
+          <button
+            onClick={() => setShowReview(true)}
+            className="px-5 py-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-xl font-medium text-sm"
+          >
+            Review List
+          </button>
+          <button
+            onClick={onNewList}
+            className="px-5 py-3 bg-blue-500 text-white rounded-xl font-medium text-sm"
+          >
+            New List
+          </button>
+        </div>
       </div>
     )
   }
@@ -99,27 +124,29 @@ export function RouteView({ items, store, onToggle, onAssignZone, onEditList, on
 
   return (
     <div>
-      {/* Progress header */}
-      <div className="max-w-lg mx-auto px-4 pt-3 pb-2">
-        <div className="flex items-center justify-between mb-2">
-          <button
-            onClick={onEditList}
-            className="flex items-center gap-1 text-sm text-blue-500 dark:text-blue-400 min-h-[44px]"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-            Edit list
-          </button>
-          <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
-            {checkedCount} / {totalCount} checked
-          </span>
-        </div>
-        <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-green-500 rounded-full transition-all duration-300"
-            style={{ width: totalCount > 0 ? `${(checkedCount / totalCount) * 100}%` : '0%' }}
-          />
+      {/* Sticky progress header — sits directly below the app nav (top-14 = 56px) */}
+      <div className="sticky top-14 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+        <div className="max-w-lg mx-auto px-4 pt-3 pb-2">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              onClick={onEditList}
+              className="flex items-center gap-1 text-sm text-blue-500 dark:text-blue-400 min-h-[44px]"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              Edit list
+            </button>
+            <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+              {checkedCount} / {totalCount} checked
+            </span>
+          </div>
+          <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-green-500 rounded-full transition-all duration-300"
+              style={{ width: totalCount > 0 ? `${(checkedCount / totalCount) * 100}%` : '0%' }}
+            />
+          </div>
         </div>
       </div>
 
@@ -130,7 +157,7 @@ export function RouteView({ items, store, onToggle, onAssignZone, onEditList, on
             unknowns={unknowns}
             zones={store.zones}
             onAssign={handleAssign}
-            onSkip={handleSkip}
+            onSkip={onSkipToOther}
           />
         </div>
       )}
@@ -147,10 +174,13 @@ export function RouteView({ items, store, onToggle, onAssignZone, onEditList, on
             key={zone.id}
             zone={zone}
             entries={entries}
+            zones={store.zones}
             onToggle={onToggle}
+            onReassign={onReassign}
           />
         ))}
       </div>
+
     </div>
   )
 }
