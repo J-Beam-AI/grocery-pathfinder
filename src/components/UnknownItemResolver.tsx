@@ -59,11 +59,15 @@ export function UnknownItemResolver({ unknowns, zones, onAssign, onSkip }: Unkno
               }
               className="flex-1 min-w-0 text-sm bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 rounded-lg px-3 py-2 min-h-[44px] outline-none"
             >
-              {sortedZones.map(z => (
-                <option key={z.id} value={z.id}>
-                  {z.name}
-                </option>
-              ))}
+              {/* optgroup label stays visible inside the native picker on mobile
+                  so the user can see which item they're assigning while scrolling zones */}
+              <optgroup label={`"${item.raw}"`}>
+                {sortedZones.map(z => (
+                  <option key={z.id} value={z.id}>
+                    {z.name}
+                  </option>
+                ))}
+              </optgroup>
             </select>
             <button
               onClick={() => onAssign(originalIndex, getSelection(originalIndex))}
