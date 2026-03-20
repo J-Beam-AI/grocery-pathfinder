@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { StoreContextProvider, useStoreContext } from './context/StoreContext'
 import { StoreSetup } from './components/StoreSetup'
 import { ListInput } from './components/ListInput'
 import { RouteView } from './components/RouteView'
@@ -7,8 +8,10 @@ import { useStore } from './hooks/useStore'
 import { useCatalog } from './hooks/useCatalog'
 import { useShoppingList } from './hooks/useShoppingList'
 import { useOtherItems } from './hooks/useOtherItems'
-import { storageGet } from './lib/storage'
-import type { ShoppingListItem } from './types'
+import { migrateStorage } from './lib/migrateStorage'
+import { storageGet, storageSet } from './lib/storage'
+import { getSeedCatalog, getDefaultStore, ALL_STORES } from './lib/storeRegistry'
+import type { ShoppingListItem, StoreLayout } from './types'
 
 type Screen = 'input' | 'route' | 'store-setup' | 'other-items'
 
@@ -17,39 +20,80 @@ function initialScreen(): Screen {
   return saved && saved.length > 0 ? 'route' : 'input'
 }
 
-export default function App() {
+// Run migration once before any component mounts
+migrateStorage()
+
+function AppInner() {
+  const { activeStoreId, setActiveStoreId } = useStoreContext()
   const [screen, setScreen] = useState<Screen>(initialScreen)
-  const { store } = useStore()
-  const { catalog, addItem, updateItemZone } = useCatalog()
-  const { items, parseList, toggleItem, assignZone, clearList } = useShoppingList()
+  const [toast, setToast] = useState<string | null>(null)
+
+  const { store } = useStore(activeStoreId)
+  const { catalog, addItem, updateItemZone } = useCatalog(activeStoreId)
+  const { items, parseList, toggleItem, assignZone, clearList, rerouteItems } = useShoppingList()
   const { otherNames, addOtherItem, removeOtherItem } = useOtherItems()
 
   const preserveChecked = useRef(false)
-  // Remembers which screen was active before opening Other Items, so we can return there.
-  const prevScreen = useRef<Screen>('input')
+  const prevScreenOtherItems = useRef<Screen>('input')
+  const prevScreenSetup = useRef<Screen>('input')
+
+  // On app init, re-route persisted list against the active store in case the store
+  // changed since last session (e.g. after a crash mid-switch). Fixes stale progress
+  // bar and empty aisle list on hard refresh.
+  useEffect(() => {
+    if (items.length > 0) {
+      rerouteItems(catalog, store.zones, addItem)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dismiss toast after 3 seconds
+  useEffect(() => {
+    if (!toast) return
+    const id = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(id)
+  }, [toast])
+
+  function handleStoreSwitch(newStoreId: string) {
+    if (newStoreId === activeStoreId) return
+    setActiveStoreId(newStoreId)
+    // Re-route items against the new store's catalog synchronously from localStorage
+    const newCatalog = storageGet<typeof catalog>(`catalog:${newStoreId}`) ?? getSeedCatalog(newStoreId)
+    const newLayout = storageGet<StoreLayout>(`store-layout:${newStoreId}`) ?? getDefaultStore(newStoreId)
+    // addItem is still bound to the old store here; write directly to the new store's catalog key
+    function saveToNewStore(item: typeof catalog[0]) {
+      const key = `catalog:${newStoreId}`
+      const existing = storageGet<typeof catalog>(key) ?? newCatalog
+      if (!existing.some(c => c.name === item.name)) {
+        storageSet(key, [...existing, item])
+      }
+    }
+    rerouteItems(newCatalog, newLayout.zones, saveToNewStore)
+    const found = ALL_STORES.find(s => s.id === newStoreId)
+    setToast(`Switched to ${found?.name ?? newStoreId}.`)
+  }
 
   function openOtherItems() {
-    prevScreen.current = screen
+    prevScreenOtherItems.current = screen
     setScreen('other-items')
   }
 
   function closeOtherItems() {
-    setScreen(prevScreen.current)
+    setScreen(prevScreenOtherItems.current)
   }
 
   function openStoreSetup() {
-    prevScreen.current = screen
+    prevScreenSetup.current = screen
     setScreen('store-setup')
   }
 
   function closeStoreSetup() {
-    setScreen(prevScreen.current)
+    setScreen(prevScreenSetup.current)
   }
 
   function handleGenerate(rawText: string) {
     const prevItems = preserveChecked.current ? items : []
     preserveChecked.current = false
-    parseList(rawText, catalog, prevItems)
+    parseList(rawText, catalog, prevItems, store.zones, addItem)
     setScreen('route')
   }
 
@@ -97,9 +141,12 @@ export default function App() {
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
           <button
             onClick={() => setScreen('input')}
-            className="text-lg font-bold tracking-tight"
+            className="flex flex-col items-start leading-tight"
           >
-            Aisle Be Back
+            <span className="text-lg font-bold tracking-tight">Aisle Be Back</span>
+            <span className="text-xs text-blue-500 dark:text-blue-400 font-medium -mt-0.5">
+              {store.shortLabel ?? store.name}
+            </span>
           </button>
 
           <div className="flex items-center gap-1">
@@ -119,7 +166,6 @@ export default function App() {
                 <line x1="9" y1="12" x2="15" y2="12" />
                 <line x1="9" y1="16" x2="13" y2="16" />
               </svg>
-              {/* Badge showing count of permanently skipped items */}
               {otherNames.length > 0 && (
                 <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full
                                  bg-purple-500 text-white text-[10px] font-bold leading-4 text-center">
@@ -148,9 +194,23 @@ export default function App() {
         </div>
       </header>
 
+      {/* Store-switch toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50
+                        bg-gray-800 dark:bg-gray-700 text-white text-sm font-medium
+                        px-4 py-2 rounded-xl shadow-lg max-w-[90vw] text-center">
+          {toast}
+        </div>
+      )}
+
       <main>
         {screen === 'input' && (
-          <ListInput onGenerate={handleGenerate} onClear={handleClearDraft} />
+          <ListInput
+            activeStoreId={activeStoreId}
+            onSwitchStore={handleStoreSwitch}
+            onGenerate={handleGenerate}
+            onClear={handleClearDraft}
+          />
         )}
 
         {screen === 'route' && (
@@ -179,5 +239,13 @@ export default function App() {
         )}
       </main>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <StoreContextProvider>
+      <AppInner />
+    </StoreContextProvider>
   )
 }

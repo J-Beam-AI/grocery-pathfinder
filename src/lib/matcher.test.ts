@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { matchItem } from './matcher'
-import type { CatalogItem } from '../types'
+import { matchItem, matchZoneLabel } from './matcher'
+import type { CatalogItem, StoreZone } from '../types'
 
 const catalog: CatalogItem[] = [
   { name: 'apples', aliases: ['apple', 'fuji apples', 'honeycrisp'], zoneId: 'A1' },
@@ -71,5 +71,59 @@ describe('matchItem', () => {
   it('partial query matching via reverse substring', () => {
     // "white bread loaf" contains "white bread" alias
     expect(matchItem('white bread loaf', catalog)?.name).toBe('bread')
+  })
+})
+
+describe('matchZoneLabel', () => {
+  const zones: StoreZone[] = [
+    { id: 'north-wall',   name: 'North Wall — Fresh Produce',                                              order: 1  },
+    { id: '1a-w',         name: '1A West — Potato Chips / Corn Chips / Tortilla Chips / Pretzels',         order: 3  },
+    { id: '5a-w',         name: '5A West — Feminine Hygiene / Dental / Cough & Cold / Vitamins',           order: 11 },
+    { id: 'east-wall',    name: 'East Wall — BBQ / Deli / Fresh Seafood / Fresh Meats / Beer',             order: 25 },
+    { id: '14b-e',        name: '14B East — Milk / Eggs / Butter',                                        order: 26 },
+    { id: 'south-wall',   name: 'South Wall — Ice Cream / Frozen Novelties',                               order: 32 },
+    { id: '9a-e',         name: '9A East — Kitchenware / Oils & Spices / Jello / Cake Mix',                order: 20 },
+  ]
+
+  it('returns null for empty string', () => {
+    expect(matchZoneLabel('', zones)).toBeNull()
+    expect(matchZoneLabel('   ', zones)).toBeNull()
+  })
+
+  it('returns null when no zone matches', () => {
+    expect(matchZoneLabel('television', zones)).toBeNull()
+  })
+
+  it('exact term match', () => {
+    expect(matchZoneLabel('pretzels', zones)?.id).toBe('1a-w')
+    expect(matchZoneLabel('butter', zones)?.id).toBe('14b-e')
+  })
+
+  it('term contains query (substring)', () => {
+    // "potato chips".includes("chips") → true
+    expect(matchZoneLabel('chips', zones)?.id).toBe('1a-w')
+    // "fresh produce".includes("produce") → true
+    expect(matchZoneLabel('produce', zones)?.id).toBe('north-wall')
+    // "vitamins".includes("vitamins") → true
+    expect(matchZoneLabel('vitamins', zones)?.id).toBe('5a-w')
+  })
+
+  it('query contains term (reverse substring)', () => {
+    // "ice cream novelties".includes("ice cream") → true
+    expect(matchZoneLabel('ice cream novelties', zones)?.id).toBe('south-wall')
+  })
+
+  it('case-insensitive matching', () => {
+    expect(matchZoneLabel('Chips', zones)?.id).toBe('1a-w')
+    expect(matchZoneLabel('MILK', zones)?.id).toBe('14b-e')
+  })
+
+  it('matches multi-word query against multi-word term', () => {
+    expect(matchZoneLabel('potato chips', zones)?.id).toBe('1a-w')
+    expect(matchZoneLabel('ice cream', zones)?.id).toBe('south-wall')
+  })
+
+  it('returns null for empty zones array', () => {
+    expect(matchZoneLabel('chips', [])).toBeNull()
   })
 })

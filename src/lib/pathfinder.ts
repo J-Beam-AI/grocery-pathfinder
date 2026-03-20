@@ -2,9 +2,12 @@ import type { ShoppingListItem, StoreLayout, RouteSegment } from '../types'
 
 /**
  * Builds an ordered shopping route from a list of items and a store layout.
- * Items are grouped by zone and sorted by zone.order (A1 first, A33 last).
+ * Items are grouped by zone and sorted by zone.order (A1 first, last zone last).
  * Zones with no matched items are omitted.
  * This module has no UI dependencies — pure logic only.
+ *
+ * walkingPattern: both 'serpentine' and 'custom' sort purely by zone.order.
+ * Serpentine traversal is encoded in the zone.order values of each seed file.
  */
 export function buildRoute(
   items: ShoppingListItem[],

@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
+import { StoreSelector } from './StoreSelector'
 
 const DRAFT_KEY = 'list-draft'
 
 interface ListInputProps {
+  activeStoreId: string
+  onSwitchStore: (storeId: string) => void
   onGenerate: (rawText: string) => void
   onClear?: () => void
 }
 
-export function ListInput({ onGenerate, onClear }: ListInputProps) {
+export function ListInput({ activeStoreId, onSwitchStore, onGenerate, onClear }: ListInputProps) {
   const [rawText, setRawText] = useState('')
 
   // Load saved draft after mount. useEffect guarantees this runs after iOS Safari
@@ -45,6 +48,9 @@ export function ListInput({ onGenerate, onClear }: ListInputProps) {
 
   return (
     <div className="max-w-lg mx-auto px-4 pt-6 pb-8 flex flex-col gap-4">
+      {/* Store selector */}
+      <StoreSelector activeStoreId={activeStoreId} onSelect={onSwitchStore} />
+
       <div>
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
           What do you need?

@@ -1,36 +1,46 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import type { CatalogItem } from '../types'
 import { storageGet, storageSet } from '../lib/storage'
-import { seedCatalog } from '../data/seed-catalog'
+import { getSeedCatalog } from '../lib/storeRegistry'
 
-const STORAGE_KEY = 'catalog'
-
-function loadCatalog(): CatalogItem[] {
-  return storageGet<CatalogItem[]>(STORAGE_KEY) ?? seedCatalog
+function loadCatalog(storeId: string): CatalogItem[] {
+  const key = `catalog:${storeId}`
+  const existing = storageGet<CatalogItem[]>(key)
+  if (existing) return existing
+  // Write seed to localStorage on first access so it survives app close
+  const seed = getSeedCatalog(storeId)
+  storageSet(key, seed)
+  return seed
 }
 
-export function useCatalog() {
-  const [catalog, setCatalog] = useState<CatalogItem[]>(loadCatalog)
+export function useCatalog(storeId: string) {
+  const [prevStoreId, setPrevStoreId] = useState(storeId)
+  const [catalog, setCatalog] = useState<CatalogItem[]>(() => loadCatalog(storeId))
 
-  // Guarantee every state change — including the initial seed — is written to localStorage.
-  // This ensures the catalog survives a full app close/reopen even before any user edits.
-  useEffect(() => {
-    storageSet(STORAGE_KEY, catalog)
-  }, [catalog])
+  // Synchronously reset state when storeId changes — avoids a post-paint render
+  // where storeId and catalog are mismatched, which blanks the page on cold-start.
+  if (prevStoreId !== storeId) {
+    setPrevStoreId(storeId)
+    setCatalog(loadCatalog(storeId))
+  }
 
   const addItem = useCallback((item: CatalogItem) => {
     setCatalog(prev => {
-      // If name already exists, update its zone instead of duplicating
-      if (prev.some(c => c.name === item.name)) {
-        return prev.map(c => c.name === item.name ? { ...c, zoneId: item.zoneId } : c)
-      }
-      return [...prev, item]
+      const updated = prev.some(c => c.name === item.name)
+        ? prev.map(c => c.name === item.name ? { ...c, zoneId: item.zoneId } : c)
+        : [...prev, item]
+      storageSet(`catalog:${storeId}`, updated)
+      return updated
     })
-  }, [])
+  }, [storeId])
 
   const updateItemZone = useCallback((name: string, zoneId: string) => {
-    setCatalog(prev => prev.map(c => c.name === name ? { ...c, zoneId } : c))
-  }, [])
+    setCatalog(prev => {
+      const updated = prev.map(c => c.name === name ? { ...c, zoneId } : c)
+      storageSet(`catalog:${storeId}`, updated)
+      return updated
+    })
+  }, [storeId])
 
   return { catalog, addItem, updateItemZone }
 }

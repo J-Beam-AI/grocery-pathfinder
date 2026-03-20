@@ -17,6 +17,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import type { StoreZone } from '../types'
 import { useStore } from '../hooks/useStore'
+import { useStoreContext } from '../context/StoreContext'
 
 // ── Sortable zone row ──────────────────────────────────────────────────────
 
@@ -189,7 +190,8 @@ interface StoreSetupProps {
 }
 
 export function StoreSetup({ onBack }: StoreSetupProps) {
-  const { store, addZone, updateZone, deleteZone, reorderZones, resetToDefault } = useStore()
+  const { activeStoreId } = useStoreContext()
+  const { store, addZone, updateZone, deleteZone, reorderZones, resetToDefault } = useStore(activeStoreId)
   const [confirmReset, setConfirmReset] = useState(false)
 
   const sensors = useSensors(
@@ -235,7 +237,7 @@ export function StoreSetup({ onBack }: StoreSetupProps) {
       {/* Reset confirmation */}
       {confirmReset && (
         <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg text-sm">
-          <p className="font-medium text-amber-800 dark:text-amber-200 mb-2">Reset all zones to the Walmart 4th Plain defaults?</p>
+          <p className="font-medium text-amber-800 dark:text-amber-200 mb-2">Reset all zones to the {store.name} defaults?</p>
           <div className="flex gap-2">
             <button
               onClick={() => { resetToDefault(); setConfirmReset(false) }}

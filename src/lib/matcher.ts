@@ -1,4 +1,4 @@
-import type { CatalogItem } from '../types'
+import type { CatalogItem, StoreZone } from '../types'
 
 function levenshtein(a: string, b: string): number {
   const m = a.length
@@ -71,4 +71,46 @@ export function matchItem(
   }
 
   return bestDist <= THRESHOLD ? best : null
+}
+
+/**
+ * Zone-label fallback: match a raw query against zone category names.
+ * Used when matchItem finds no CatalogItem. Routes the item for the current
+ * trip only — does NOT create a CatalogItem or modify the catalog.
+ *
+ * Zone names are formatted as "Prefix — Cat1 / Cat2 / ..." The category
+ * portion (after " — ") is split on " / " to produce searchable terms.
+ * If no " — " separator exists, the full name is used as a single term.
+ *
+ * Priority (first match wins, same principle as matchItem):
+ *   1. Exact: query === term
+ *   2. Substring: term contains query
+ *   3. Reverse substring: query contains term
+ */
+export function matchZoneLabel(
+  raw: string,
+  zones: StoreZone[],
+): StoreZone | null {
+  const query = raw.trim().toLowerCase()
+  if (!query) return null
+
+  function termsFor(zone: StoreZone): string[] {
+    const parts = zone.name.split(' — ')
+    const category = parts.length > 1 ? parts[1] : parts[0]
+    return category.toLowerCase().split(' / ').map(t => t.trim()).filter(Boolean)
+  }
+
+  // 1. Exact match
+  const exact = zones.find(z => termsFor(z).some(t => t === query))
+  if (exact) return exact
+
+  // 2. Term contains query
+  const sub = zones.find(z => termsFor(z).some(t => t.includes(query)))
+  if (sub) return sub
+
+  // 3. Query contains term
+  const revSub = zones.find(z => termsFor(z).some(t => query.includes(t)))
+  if (revSub) return revSub
+
+  return null
 }

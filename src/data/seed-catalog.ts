@@ -15,6 +15,8 @@ import type { StoreLayout, CatalogItem } from "../types";
 export const defaultStore: StoreLayout = {
   id: "walmart-4th-plain",
   name: "Walmart — 4th Plain",
+  shortLabel: "4th Plain",
+  walkingPattern: "serpentine",
   zones: [
     { id: "A1", name: "A1 — Produce", order: 0 },
     { id: "A2", name: "A2 — Desserts & Ice Cream", order: 1 },

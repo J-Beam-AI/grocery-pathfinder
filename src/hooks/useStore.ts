@@ -1,21 +1,29 @@
 import { useState, useCallback } from 'react'
 import type { StoreLayout, StoreZone } from '../types'
 import { storageGet, storageSet } from '../lib/storage'
-import { defaultStore } from '../data/seed-catalog'
+import { getDefaultStore } from '../lib/storeRegistry'
 
-const STORAGE_KEY = 'store-layout'
-
-function loadStore(): StoreLayout {
-  return storageGet<StoreLayout>(STORAGE_KEY) ?? defaultStore
+function loadStore(storeId: string): StoreLayout {
+  return storageGet<StoreLayout>(`store-layout:${storeId}`) ?? getDefaultStore(storeId)
 }
 
-export function useStore() {
-  const [store, setStore] = useState<StoreLayout>(loadStore)
+export function useStore(storeId: string) {
+  const storageKey = `store-layout:${storeId}`
+
+  const [prevStoreId, setPrevStoreId] = useState(storeId)
+  const [store, setStore] = useState<StoreLayout>(() => loadStore(storeId))
+
+  // Synchronously reset state when storeId changes — avoids a post-paint render
+  // where storeId and store are mismatched, which blanks the page on cold-start.
+  if (prevStoreId !== storeId) {
+    setPrevStoreId(storeId)
+    setStore(loadStore(storeId))
+  }
 
   const persist = useCallback((updated: StoreLayout) => {
     setStore(updated)
-    storageSet(STORAGE_KEY, updated)
-  }, [])
+    storageSet(storageKey, updated)
+  }, [storageKey])
 
   const addZone = useCallback((name: string) => {
     const id = `custom-${Date.now()}`
@@ -36,15 +44,14 @@ export function useStore() {
     persist({ ...store, zones })
   }, [store, persist])
 
-  // Receives the new ordered array of zones after drag
   const reorderZones = useCallback((zones: StoreZone[]) => {
     const reindexed = zones.map((z, i) => ({ ...z, order: i }))
     persist({ ...store, zones: reindexed })
   }, [store, persist])
 
   const resetToDefault = useCallback(() => {
-    persist(defaultStore)
-  }, [persist])
+    persist(getDefaultStore(storeId))
+  }, [storeId, persist])
 
   return { store, addZone, updateZone, deleteZone, reorderZones, resetToDefault }
 }
